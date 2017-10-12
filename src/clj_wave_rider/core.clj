@@ -4,7 +4,7 @@
             [clj-wave-rider.common :as common]
             [hickory.core :as hickory]
             [hickory.select :as s]
-            [clojure.core.async :as async :refer [go go-loop put! take! <! >! <!! timeout chan alt! go]]))
+            [clojure.core.async :as async :refer [pipeline-blocking go go-loop put! take! <! >! <!! timeout chan alt! go to-chan]]))
 
 (def whitelist-airports [:airport/LCY :airport/LHR :airport/LGW :airport/LTN :airport/STN :airport/SEN])
 
@@ -66,7 +66,7 @@
                  :regions    []
                  :spots      []}))
 
-(def selector-url
+(def select-urls
   (fn [matches hickory-tree]
     (let [host "https://www.wannasurf.com"
           all (-> (s/select (s/child
@@ -82,9 +82,9 @@
 (re-matches #"/spot/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/index.html" "/spot/Africa/Reunion/_--__--black_rocks_right/index.html")
 
 (defn get-href
-  [url matches]
+  [url matches selector]
   (let [response (common/parse-response (<!! (common/http-get url)))
-        fn-sel (partial selector-url matches)]
+        fn-sel (partial selector matches)]
     (-> response
         hickory/parse
         hickory/as-hickory
@@ -96,8 +96,36 @@
 (def match-zones #"/spot/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/index.html")
 (def match-spots #"/spot/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/[a-zA-Z0-9-_]+/index.html")
 
+(def select-is-zone?
+  (fn [matches hickory-tree]
+    (let [host "https://www.wannasurf.com"
+          all (-> (s/select (s/child
+                             (s/and
+                              (s/class "wanna-item")
+                              (s/tag :h3)))
+                            hickory-tree))]
+      (some (fn [{:keys [content]}]
+              (= (first content) "Zones")) all))))
+
 (comment
-  (pp (get-href "https://www.wannasurf.com/spot/index.html" match-countries))
-  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/index.html" match-zones))
-  (pp (get-href "https://www.wannasurf.com/spot/Africa/Reunion/index.html" match-zones))
-  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/Asturias/index.html" match-spots)))
+  (pp (get-href "https://www.wannasurf.com/spot/index.html" match-countries select-urls))
+  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/index.html" match-zones select-urls))
+  (pp (get-href "https://www.wannasurf.com/spot/Africa/Reunion/index.html" match-zones select-urls))
+  (pp (get-href "https://www.wannasurf.com/spot/Africa/Reunion/index.html" match-zones select-is-zone?))
+  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/index.html" match-zones select-is-zone?))
+  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/Asturias/index.html" match-spots select-urls)))
+
+(def parallelism (+ (.availableProcessors (Runtime/getRuntime)) 1))
+
+(defn amazing-pipeline
+  [in]
+  (let [out-countries-urls (chan 1)
+        split!!
+        out- (chan 1)]
+    
+    (pipeline-blocking parallelism out-surf-urls call-urls-pipeline in)
+    (pipeline-blocking parallelism out-transform-response transform-response-pipeline out-surf-urls)
+    out-transform-response))
+
+(comment
+  (amazing-pipeline (to-chan ["https://www.wannasurf.com/spot/index.html"]))
