@@ -1,0 +1,78 @@
+(ns clj-kafka.common
+  (:import [org.apache.kafka.common.serialization Serde Deserializer Serializer Serdes StringSerializer]
+           [org.apache.kafka.clients.producer KafkaProducer ProducerConfig ProducerInterceptor ProducerRecord]
+           [org.apache.kafka.streams.state QueryableStoreTypes Stores]
+           [org.apache.kafka.streams KafkaStreams StreamsConfig])
+  (:require [franzy.serialization.deserializers :as deserializers]
+            [franzy.serialization.serializers :as serializers]
+            [org.httpkit.client :as http]
+            [clojure.core.async :as async :refer [go go-loop put! take! <! >! <!! timeout chan alt! go]]))
+
+(defn http-get [url]
+  (let [c (chan)]
+    (println "Calling this url:" url)
+    (http/get url (fn [r] (put! c r)))
+    c))
+
+;;;
+;;; Serialization stuff
+;;;
+
+(deftype NotSerializeNil [edn-serializer]
+  Serializer
+  (configure [_ configs isKey] (.configure edn-serializer configs isKey))
+  (serialize [_ topic data]
+    (when data (.serialize edn-serializer topic data)))
+  (close [_] (.close edn-serializer)))
+
+;; Can be global as they are thread-safe
+(def serializer (NotSerializeNil. (serializers/edn-serializer)))
+
+(def deserializer (deserializers/edn-deserializer))
+
+(deftype EdnSerde []
+  Serde
+  (configure [this map b])
+  (close [this])
+  (serializer [this]
+    serializer)
+  (deserializer [this]
+    deserializer))
+
+(def stream-config 
+  (StreamsConfig. {StreamsConfig/APPLICATION_ID_CONFIG    "test-app-id"
+                   StreamsConfig/BOOTSTRAP_SERVERS_CONFIG "localhost:9092"                                  
+                   StreamsConfig/KEY_SERDE_CLASS_CONFIG (.getClass (Serdes/String))
+                   StreamsConfig/VALUE_SERDE_CLASS_CONFIG "clj_kafka.common.EdnSerde"}))
+
+
+(defmacro with-topology
+  [name & body]
+  `(with-open [ks# (KafkaStreams. ~name stream-config)]
+     ~@body
+     (.cleanUp ks#)
+     (.start ks#)
+     (Thread/sleep 5000)))
+
+(defn send-to
+  [topic k v]
+  (let [config {ProducerConfig/BOOTSTRAP_SERVERS_CONFIG "localhost:9092"
+                ProducerConfig/ACKS_CONFIG              "all"
+                ProducerConfig/RETRIES_CONFIG           "1"}]
+    (with-open [producer (KafkaProducer. config
+                                         (StringSerializer.)
+                                         (serializers/edn-serializer))]
+      (.get (.send producer (ProducerRecord. (name topic) k v)))
+      (.flush producer))))
+
+(defn build-store
+  ([name]
+   (build-store name {:key-serde   (Serdes/String)
+                      :value-serde (EdnSerde.)}))
+  ([name {:keys [key-serde value-serde] :as serdes}]
+   (..
+    (Stores/create name)
+    (withKeys key-serde)
+    (withValues value-serde)
+    (persistent)
+    (build))))

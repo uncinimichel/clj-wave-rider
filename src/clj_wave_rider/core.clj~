@@ -1,0 +1,44 @@
+(ns clj-wave-rider.core
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]))
+
+(def white-list-airport [:lcy :lhr :lgw :ltn :stn :sen])
+
+(def fn-airports (fn [lines]
+                   (into {} (map (fn [[_ airport-name airport-city country airport-code]]
+                                   (hash-map (keyword "airport" airport-code)
+                                             (hash-map :airport/name airport-name
+                                                       :airport/city airport-city
+                                                       :airport/country country)))
+                                 lines))))
+
+(def fn-routes (fn [lines]
+                 (reduce (fn [p [_ _ from _ to]]
+                           (println "from" from "to" to) 
+                           (if (contains? p from)
+                             (assoc p from (conj (from p) to))
+                             (assoc p from [to])))
+                         {}
+                         lines)))
+
+(defn get-clean-lines
+  [text]
+  (map (fn [line]
+         (let [no-quote (str/replace line #"\"" "")
+               words (str/split no-quote #",")]
+           words))
+       (str/split text #"\n")))
+
+(defn process-file
+  [file-name fun]
+  (-> (slurp (io/resource file-name))
+      get-clean-lines
+      fun))
+
+(def all-airports (process-file "airports.dat" fn-airports))
+(def all-routes (process-file "routes.dat" fn-routes))
+
+(defn foo
+  "I don't do a whole lot."
+  [x]
+  (println x "Hello, World!"))
