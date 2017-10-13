@@ -5,7 +5,7 @@
 
 (defn http-get [url]
   (let [c (chan)]
-    (println "Calling this url:" url)
+  ;  (println "Calling this url:" url)
     (client/get url
                 {:async? true
                  :insecure? true}
