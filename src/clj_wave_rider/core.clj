@@ -46,7 +46,27 @@
 (comment
   (def all-airports (process-file "airports.dat" fn-airports))
   (def all-routes (process-file "routes.dat" fn-routes))
-  (def my-routes (get-my-routes all-routes all-airports whitelist-airports)))
+  (def my-routes (get-my-routes all-routes all-airports whitelist-airports))
+  (def all-airports-in-my-routes
+    (into #{}
+          (comp 
+           (mapcat (fn [[k {:keys [:airport/routes]}]]
+                     routes))
+           (map (fn [ak]
+                  (hash-map ak
+                            (ak all-airports)))))
+          my-routes)))
+
+
+(comment
+  (spit "/tmp/data2.edn" (with-out-str (pp (map (fn [[k {:keys [:airport/lat :airport/long :airport/name]}]]
+                                                  (apply str lat "," long "," name)) 
+                                                all-airports))))
+
+  (spit "/tmp/data2.json" (with-out-str (pp (map (fn [[k {:keys [:airport/lat :airport/long :airport/name]}]]
+                                                   (apply str lat "," long "," name)) 
+                                                 all-airports)))))
+
 
 (defn get-my-routes
   [routes airports whitelist]
@@ -55,6 +75,13 @@
                                  :airport/routes v)))
           {}
           (select-keys routes whitelist)))
+
+
+(def cat-a [1 2 3 4 5 6 7 8 9 10])
+(def cat-b [4 9 10])
+
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
                                         ;All the surfing spot
@@ -128,8 +155,8 @@
 
 (def get-countries-pipeline
   (comp
-   (mapcat (partial get-href match-countries select-urls))
-   (take 150)))
+   (mapcat (partial get-href match-countries select-urls))))
+                                        ;   (take 500)))
 
 (def has-zones-pipeline?
   (map (fn [url]
@@ -137,23 +164,29 @@
 
 (def get-zones-pipeline
   (mapcat (fn [[url _]]
-            (get-href match-zones select-urls url))))
+            (println "This is an urrl" url)
+            (let [r (get-href match-zones select-urls url)]
+              (println "ZONES" r)
+              r))))
 
 (def get-spots-no-zones-pipeline
-  (map (fn [[url _]]
-         ;   (println "this is should not be nil NO ZONES" url)
-         (let [r (get-href match-spots-no-zones select-urls url)]
-           (println "no zone result:URL" url "-----------------"url)
-           r))))
+  (mapcat (fn [[url _]]
+            (if (nil? url)
+              {}
+              (get-href match-spots-no-zones select-urls url)))))
 
 (def get-spots-zones-pipeline
-  (map (fn [[url _]]
-         (let [r (get-href match-spots-zones select-urls url)]           
-           (println "this is should not be nilLALLALALAALLALALAAL" r)
-           r))))
+  (mapcat (fn [url]
+                                        ;         (println url "dssaddassd")
+            (if (nil? url)
+              {}
+              (let [r (get-href match-spots-zones select-urls url)]
+                                        ;            (println r "rrrrrrrrrrrrrrrrr")
+                r
+                )))))
 
 (def get-spots-info-pipeline
-  (map (fn [[url _]]
+  (map (fn [url]
          (if (nil? url)
            {}
            (hash-map url
@@ -166,22 +199,22 @@
   [in]
   (let [out-countries-urls (chan 1)
         out-zones (chan 1)
+        [out-countries-no-zones-urls out-countries-with-zones-urls] (async/split (fn [[url boo]](false? boo)) out-zones)
         out-zone-urls (chan 1)
-        [out-no-zone-urls out-zone-urls] (async/split (fn [[url boo]](false? boo)) out-zones)
         out-spot-zone-urls (chan 1)
         out-spot-no-zone-urls (chan 1)
         out-spot-urls (async/merge [out-spot-zone-urls out-spot-no-zone-urls] 1)
-        out-spot-info (chan 1)
-        out-spot-info-urls (chan 1)]
+        out-spot-info (chan 1)]
     
-    (pipeline-blocking parallelism out-countries-urls      get-countries-pipeline  in)
-    (pipeline-blocking parallelism out-zones               has-zones-pipeline?     out-countries-urls)
-;    (pipeline-blocking parallelism out-zone-urls           get-zones-pipeline      out-zone-urls)
+    (pipeline-blocking parallelism out-countries-urls      get-countries-pipeline      in)
+    (pipeline-blocking parallelism out-zones               has-zones-pipeline?         out-countries-urls)
+    (pipeline-blocking parallelism out-spot-no-zone-urls   get-spots-no-zones-pipeline out-countries-no-zones-urls)
 
-    (pipeline-blocking parallelism out-spot-no-zone-urls   get-spots-no-zones-pipeline out-no-zone-urls)
-    (pipeline-blocking parallelism out-spot-zone-urls      get-spots-zones-pipeline out-zone-urls)
-
-    (pipeline-blocking parallelism out-spot-info           get-spots-info-pipeline out-spot-urls)
+    (pipeline-blocking parallelism out-zone-urls           get-zones-pipeline          out-countries-with-zones-urls)
+    (pipeline-blocking parallelism out-spot-zone-urls      get-spots-zones-pipeline    out-zone-urls)
+    
+    
+    (pipeline-blocking parallelism out-spot-info           get-spots-info-pipeline     out-spot-urls)
     out-spot-info))
 
 (comment
@@ -189,11 +222,49 @@
   (def ciao (let [a (<!! (async/reduce merge {} (amazing-pipeline (to-chan ["https://www.wannasurf.com/spot/index.html"]))))]
               (pp a)
               a))
+
+  (spit "/tmp/data.edn" (with-out-str (pp (into []
+                                                (comp
+                                                 (map (fn [[k {:keys [lat long]}]]
+                                                        (apply str lat "," long)))
+                                                 (remove (fn [v]
+                                                           (= v ","))))
+                                                ciao
+                                                ))))
+
+  (pp
+   (into []
+         (comp
+          (map (fn [[k {:keys [lat long]}]]
+                 (apply str lat "," long)))
+          (remove (fn [v]
+                    (= v ","))))
+         (take 10 ciao)
+         )))
+
+
+(comment
+  (let [o1 (chan 1)
+        t (chan 1)
+        o2 (chan 1)
+        o3 (chan 1)]
+    (pipeline-blocking 1 o1 get-zones-pipeline           (to-chan [["https://www.wannasurf.com/spot/Europe/Spain/index.html" true]]))
+                                        ;    (pipeline-blocking 1 t  (map (fn [%] (println %) %)) o1)
+    (pipeline-blocking 1 o2  get-spots-zones-pipeline    o1)
+    (pipeline-blocking 1 o3  get-spots-info-pipeline    o2)
+    (go-loop []
+      (let [a (<!! o3)]
+        (pp a)
+        (if (nil? a)
+          a
+          (recur)))))
   )
+
+
 
 (comment
   (pp (take 10 (get-href match-countries select-urls "https://www.wannasurf.com/spot/index.html")))
-  (pp (get-href "https://www.wannasurf.com/spot/Europe/Spain/index.html" match-zones select-urls))
+  (pp (get-href  match-zones select-urls "https://www.wannasurf.com/spot/Europe/Spain/index.html"))
   (pp (get-href "https://www.wannasurf.com/spot/Africa/Reunion/index.html" match-zones select-urls))
   (pp (get-href "https://www.wannasurf.com/spot/Africa/Burkina_Faso/index.html" match-zones select-is-zone?))
   (pp (get-href match-zones select-is-zone? "https://www.wannasurf.com/spot/Africa/Sao_Tome/index.html"))
