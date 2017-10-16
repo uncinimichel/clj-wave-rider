@@ -1,11 +1,10 @@
 (ns clj-wave-rider.common
-  (:require [org.httpkit.client :as http]
-            [clj-http.client :as client]
+  (:require [clj-http.client :as client]
             [clojure.core.async :as async :refer [go go-loop put! take! <! >! <!! timeout chan alt! go]]))
 
 (defn http-get [url]
   (let [c (chan)]
-  ;  (println "Calling this url:" url)
+    (println "Calling this url:" url)
     (client/get url
                 {:async? true
                  :insecure? true}
@@ -21,3 +20,4 @@
       body
       status)))
 
+(defn pp [r] (clojure.pprint/pprint r))
