@@ -48,6 +48,13 @@
       (some? (some (fn [{:keys [content]}]
                      (= (first content) "Zones")) all)))))
 
+(def select-spot-info-left
+  (fn [_ hickory-tree]
+    (let [all (-> (s/select (s/descendant
+                             (s/id "wanna-item-specific-2columns-left"))
+                            hickory-tree))
+          content (:content (last all))])))
+
 (def select-spot-info
   (fn [_ hickory-tree]
     (let [all (-> (s/select (s/descendant
@@ -149,7 +156,8 @@
   (common/pp (get-href match-zones select-is-zone? "https://www.wannasurf.com/spot/Africa/Burkina_Faso/index.html"))
   (common/pp (get-href match-spots select-urls "https://www.wannasurf.com/spot/Africa/Algeria/index.html"))
   (common/pp (get-href match-spots-no-zones select-urls "https://www.wannasurf.com/spot/Africa/Burkina_Faso/index.html"))
-  (common/pp (get-href "https://www.wannasurf.com/spot/Africa/Angola/ambriz_beach/index.html" match-spots select-spot-info)))
+  (common/pp (get-href match-spots-no-zones select-spot-info "https://www.wannasurf.com/spot/Africa/Angola/ambriz_beach/index.html"))
+  )
 
 
 (defn deg->rad [deg] (* deg (/ Math/PI 180)))
