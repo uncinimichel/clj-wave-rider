@@ -149,7 +149,7 @@
   (common/pp (get-href match-zones select-is-zone? "https://www.wannasurf.com/spot/Africa/Burkina_Faso/index.html"))
   (common/pp (get-href match-spots select-urls "https://www.wannasurf.com/spot/Africa/Algeria/index.html"))
   (common/pp (get-href match-spots-no-zones select-urls "https://www.wannasurf.com/spot/Africa/Burkina_Faso/index.html"))
-  (common/pp (get-href match-spots select-spot-info "https://www.wannasurf.com/spot/Africa/Angola/ambriz_beach/index.html")))
+  (common/pp (get-href "https://www.wannasurf.com/spot/Africa/Angola/ambriz_beach/index.html" match-spots select-spot-info)))
 
 
 (defn deg->rad [deg] (* deg (/ Math/PI 180)))
@@ -188,4 +188,5 @@
     (filter (fn [a-p]
               (some (fn [s-p]
                       (<= 100 (distance-between-points a-p s-p))
-                      surfing-spots)))))
+                      surfing-spots))))))
+
